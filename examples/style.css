@@ -1,0 +1,29 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #f0f0f0;
+    font-family: Helvetica, sans-serif;
+    font-size: 12px;
+    overflow: hidden;
+}
+
+header {
+    text-align: center;
+}
+
+footer {
+    text-align: center;
+}
+
+#voxcellerContainer {
+    width: 640px;
+    height: auto;
+    margin: 0 auto;
+    padding: 0;
+    background-color: #666;
+    border: #000 2px solid;
+}
+
+#dropArea {
+    height: 40px;
+}
