@@ -7,7 +7,7 @@
  */
 var connect = require('connect');
 
-var port = 3000;
+var port = process.env.VMC_APP_PORT || 3000;
 
 connect.createServer(
 	connect.logger(),

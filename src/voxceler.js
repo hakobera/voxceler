@@ -22,12 +22,12 @@ var Voxceler = Voxceler || {};
 Voxceler.VOXCEL_UNIT_SIZE = 50;
 
 /**
- * Icon image file size (px).
+ * Image loading information element id attribute value.
  *
  * @constant
- * @type {Number}
+ * @type {String}
  */
-Voxceler.ICON_IMAGE_SIZE = 32;
+Voxceler.LOADING_INFO_ELEMENT_ID = 'voxceler-loadingInfo';
 
 //-----------------------------------------------------------------------------
 // Class properties.
@@ -41,6 +41,30 @@ Voxceler.ICON_IMAGE_SIZE = 32;
  * @type {Boolean}
  */
 Voxceler.isDebug = false;
+
+/**
+ * WebGL Support or not flag.
+ */
+Voxceler.hasWebGL = (function(global) {
+	var	contentIds = ['experimental-webgl', 'moz-webgl', 'webkit-3d', 'webgl', '3d'],
+			length = contentIds.length,
+			canvas, context, i;
+
+	canvas = document.createElement('canvas');
+	if (canvas) {
+		for (i = 0; i < length; ++i) {
+			try {
+				context = canvas.getContext(contentIds[i]);
+				if (context) {
+					return true;
+				}
+			} catch (err) {
+				continue;
+			}
+		}
+	}
+	return false;
+})(this);
 
 //-----------------------------------------------------------------------------
 // Utility functions.
@@ -178,7 +202,7 @@ Voxceler.Renderer.prototype = {
 	 */
 	initialize: function(config) {
 		var config = config || {},
-				containerId = config.containerId || 'voxcellerContainer',
+				containerId = config.containerId || 'voxceler-container',
 				voxcelSize = config.voxcelSize || 32,
 				width = config.width || 640,
 				height = config.height || 480;
@@ -194,7 +218,7 @@ Voxceler.Renderer.prototype = {
 		//this.drawGrid(this.scene, voxcelSize);
 		this.initCamera(width / height);
 		this.initLights(this.scene);
-		this.initIconCanvas(this.scene);
+		this.initIconCanvas(this.scene, voxcelSize);
 		this.bindEvents(this.renderer.domElement);
 	},
 
@@ -247,7 +271,13 @@ Voxceler.Renderer.prototype = {
 			document.body.appendChild(container);
 		}
 
-		renderer = new THREE.CanvasRenderer();
+		if (Voxceler.hasWebGL) {
+			renderer = new THREE.WebGLRenderer();
+			Voxceler.log.info('Renderer using WebGL feature.');
+		} else {
+			renderer = new THREE.CanvasRenderer();
+			Voxceler.log.info('Renderer using canvas feature.');
+		}
 		renderer.setSize(width, height);
 		container.appendChild(renderer.domElement);
 
@@ -260,7 +290,7 @@ Voxceler.Renderer.prototype = {
 	 * @param {Number} aspectRatio Screen aspect ratio.
 	 */
 	initCamera: function(aspectRatio) {
-		this.radius = 4000,
+		this.radius = 3000;
 		this.theta = 45;
 		this.phi = 60;
 
@@ -312,7 +342,7 @@ Voxceler.Renderer.prototype = {
 	 */
 	initBrush: function(scene) {
 		var brush = this.createVoxMesh(0xdf1f1f, 0.4);
-		brush.position.y = 2000; // move to unvisible area
+		brush.position.y = 4000; // move to unvisible area
 		brush.overdraw = true;
 		scene.addObject(brush);
 
@@ -359,13 +389,13 @@ Voxceler.Renderer.prototype = {
 	/**
 	 * Initiazlize image icon canvas area.
 	 */
-	initIconCanvas: function(scene) {
+	initIconCanvas: function(scene, voxcelSize) {
 		this.voxRoot = this.createVoxMesh(0xffffff, 0);
 		this.voxRoot.visible = false;
 		scene.addObject(this.voxRoot);
 
 		var iconCanvas = document.createElement('canvas');
-		iconCanvas.width = iconCanvas.height = Voxceler.ICON_IMAGE_SIZE;
+		iconCanvas.width = iconCanvas.height = voxcelSize;
 		this.iconCanvas = iconCanvas;
 		this.iconContext = iconCanvas.getContext('2d');
 	},
@@ -413,14 +443,17 @@ Voxceler.Renderer.prototype = {
 	 * @param {Element} rendererElement DOM element.
 	 */
 	bindEvents: function(rendererElement) {
-		// bind events
+		rendererElement.parent = this;
+
 		rendererElement.addEventListener('mousedown', this.onMouseDown, false);
 		rendererElement.addEventListener('mousemove', this.onMouseMove, false);
 		rendererElement.addEventListener('mouseup', this.onMouseUp, false);
 		rendererElement.addEventListener('mousewheel', this.onMouseWheel, false);
-		rendererElement.addEventListener('dragover', this.onDragOver, false);
-		rendererElement.addEventListener('drop', this.onDrop, false);
-		rendererElement.parent = this;
+
+		if (window.FileReader) {
+			rendererElement.addEventListener('dragover', this.onDragOver, false);
+			rendererElement.addEventListener('drop', this.onDrop, false);
+		}
 
 		this.isMouseDown = false;
 		this.onMouseDownTheta = this.theta;
@@ -511,31 +544,73 @@ Voxceler.Renderer.prototype = {
 	onDrop: function(e) {
 		e.preventDefault();
 
-		var renderer = e.target.parent;
+		var renderer = e.target.parent,
+				file = e.dataTransfer.files[0],
+				fileType = file.type,
+				fileReader;
 
-		var file = e.dataTransfer.files[0];
-    var fileType = file.type;
     if (!fileType.match(/image\/\w+/)){
       alert('File is not an image file.');
       return;
     }
 
-    var reader = new FileReader();
-    reader.onload = function() {
-	    var img = new Image();
-      img.onload = function() {
-	      renderer.processImage(img);
-	      img = null;
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
+		renderer.appendLoadingInfo();
+
+		fileReader = new FileReader();
+		fileReader.onload = function() {
+			var img = new Image();
+			img.onload = function() {
+				renderer.processImage(img);
+				img = null;
+				renderer.removeLoadingInfo();
+			};
+			img.src = fileReader.result;
+		};
+		fileReader.readAsDataURL(file);
+	},
+
+	/**
+	 * Append loading info element.
+	 */
+	appendLoadingInfo: function() {
+		loadingInfo = document.createElement('div');
+		loadingInfo.setAttribute('id', Voxceler.LOADING_INFO_ELEMENT_ID);
+		loadingInfo.style.width = window.innerWidth + 'px';
+		loadingInfo.style.height = window.innerHeight + 'px';
+		loadingInfo.style.zIndex = 1000;
+		loadingInfo.style.backgroundColor = '#000000';
+		loadingInfo.style.opacity = 0.7;
+		loadingInfo.style.position = 'absolute';
+		loadingInfo.style.top = '0px';
+		loadingInfo.style.left = '0px';
+		loadingInfo.style.textAlign = 'center';
+
+		loadingText = document.createElement('p');
+		loadingText.style.lineHeight = loadingInfo.style.height;
+		loadingText.style.color = '#fff';
+		loadingText.style.fontSize = '36px';
+		loadingText.innerText = 'Loading ...';
+		loadingInfo.appendChild(loadingText);
+
+		Voxceler.log.debug(loadingInfo, loadingText);
+
+		document.body.appendChild(loadingInfo);
+	},
+
+	/**
+	 * Remove loading info element.
+	 */
+	removeLoadingInfo: function() {
+		var loadingInfo = document.getElementById(Voxceler.LOADING_INFO_ELEMENT_ID);
+		if (loadingInfo) {
+			document.body.removeChild(loadingInfo);
+		}
 	},
 
 	/**
 	 * Process image data and draw as vox.
 	 *
-	 * @param {Image} img 画像
+	 * @param {Image} img Image object to load.
 	 */
 	processImage: function(img) {
 		var imageData, pixels,
@@ -543,8 +618,8 @@ Voxceler.Renderer.prototype = {
 				color, opacity,
 				mesh, pos,
 				vs = this.voxcelSize / 2,
-				w = Voxceler.ICON_IMAGE_SIZE,
-				h = Voxceler.ICON_IMAGE_SIZE;
+				w = this.voxcelSize,
+				h = this.voxcelSize;
 
 		this.scene.removeChildRecurse(this.voxRoot);
 		
@@ -552,7 +627,6 @@ Voxceler.Renderer.prototype = {
 		this.iconContext.drawImage(img, 0, 0, w, h);
 		imageData = this.iconContext.getImageData(0, 0, w, h);
 		pixels = imageData.data;
-		len = pixels.length * 4;
 
 		for (y = 0; y < h; ++y) {
 			offset = y * w;
@@ -571,7 +645,6 @@ Voxceler.Renderer.prototype = {
 			}
 		}
 
-		Voxceler.log.debug(color);
 		this.render();
 	}
 	
